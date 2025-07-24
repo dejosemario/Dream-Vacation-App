@@ -13,6 +13,7 @@ RUN npm ci
 COPY . .
 
 # Build the React app
+ENV NODE_OPTIONS="--openssl-legacy-provider"
 RUN npm run build
 
 

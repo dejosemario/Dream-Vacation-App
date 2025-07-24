@@ -22,11 +22,12 @@ RUN chown -R nodejs:nodejs /app
 USER nodejs
 
 # Expose the port your app runs on
-EXPOSE 3000
+ENV PORT=3001
+EXPOSE ${PORT}
 
 # Healthcheck to ensure the app is running
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Start the application
 CMD ["npm", "start"]
