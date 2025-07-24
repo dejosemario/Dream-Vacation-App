@@ -1,0 +1,61 @@
+  version: '3.8'
+
+  services: 
+    #postgreSql database service
+    db: 
+      image: postgres:15-alpine
+      container_name: dream_vacation_db
+      environment: 
+        - POSTGRES_DB=${DB_NAME}
+        - POSTGRES_USER=${DB_USER}
+        - POSTGRES_PASSWORD=${DB_PASSWORD}
+      ports:
+        - "${DB_PORT}:5432"
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+      networks:
+        - dream_vacation_network
+      healthcheck:
+        test: ["CMD", "pg_isready", "-U", "${DB_USER}"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+
+    # Backend service
+    backend:
+      image: dejosemario1/dream-vacation-backend:latest
+      container_name: dvb-container
+      environment:
+        - DATABASE_URL=${DATABASE_URL}
+        - PORT=${BACKEND_PORT}
+        - NODE_ENV=${NODE_ENV}
+        - COUNTRIES_API_BASE_URL=${COUNTRIES_API_BASE_URL}
+      ports:
+        - "3002:${BACKEND_PORT}"
+      depends_on:
+        db: 
+          condition: service_healthy
+      networks:
+        - dream_vacation_network
+      restart: unless-stopped
+      
+    #Frontend service
+    frontend: 
+      image: dejosemario1/dream-vacation-frontend:latest
+      container_name: dvf-container
+      environment:
+        - REACT_APP_API_URL=http://localhost:${BACKEND_PORT}/api
+      ports:
+        - "${FRONTEND_PORT}:80"
+      depends_on:
+        - backend
+      networks: 
+        - dream_vacation_network
+      restart: unless-stopped
+    
+  volumes:
+    postgres_data:
+  
+  networks:
+    dream_vacation_network:
+      driver: bridge
