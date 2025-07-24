@@ -14,6 +14,27 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+const initDB = async () =>{
+  try{
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS destinations(
+        id SERIAL PRIMARY KEY,
+        country VARCHAR(255) NOT NULL,
+        capital VARCHAR(255),
+        population INTEGER,
+        region VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+      `);
+      console.log('Database table ready')
+  }catch(e){
+    console.log('Database init error:', e)
+  }
+}
+
+initDB();
+
+
 const COUNTRIES_API_BASE_URL = process.env.COUNTRIES_API_BASE_URL || 'https://restcountries.com/v3.1';
 
 app.get('/api/destinations', async (req, res) => {
