@@ -1,44 +1,92 @@
-# Dream Vacation Destinations
+# Dream Vacation Destinations App
 
-This application allows users to create a list of countries they'd like to visit, providing basic information about each country. The project is structured to mimic a real-life production environment, employing best practices in software development, deployment, and continuous integration/continuous delivery (CI/CD).
+A simple app to manage a list of dream vacation countries with basic info, containerized with Docker. 
 
 ## Setup
 
-### Backend
-1. Navigate to the `backend` directory.
-2. Run `npm install` to install dependencies.
-3. Set up your PostgreSQL database and update the `.env` file with your database URL.
-4. Run `npm start` to start the server.
+1. Install Docker and Docker Compose.
+2. Clone the repo: `git clone <repository-url> && cd dream-vacation-destinations`
+3. Create `.env` file:
+4. Run: `docker-compose up --build`
+5. Open: `http://localhost:{port}`
 
-### Frontend
-1. Navigate to the `frontend` directory.
-2. Run `npm install` to install dependencies.
-3. Update the `.env` file with your API URL (e.g., `REACT_APP_API_URL=http://localhost:3001`).
-4. Run `npm start` to start the React development server.
-
-## Features
-- **Add Countries**: Users can add countries to their dream vacation list.
+## Project Overview
+- **Front and Backend code**:  Sourced from  [Dream-Vacation-App:](https://github.com/obusorezekiel/Dream-Vacation-App).
 - **View Country Details**: Displays capital, population, and region information for each country.
 - **Remove Countries**: Users can remove countries from their list.
 - **Production-Ready Setup**: The project is designed to be scalable and maintainable, following industry-standard practices for deployment and CI/CD.
 
-## Roadmap
-- **CI/CD Implementation**: Automate the build, test, and deployment process using industry-standard CI/CD tools.
-- **Infrastructure as Code (IaC)**: Implement IaC for automated environment setup and management.
-- **Scalability**: Enhance the application to support multiple environments (staging, production) with proper domain names and configurations.
-- **Security**: Utilize Kubernetes Secrets and environment variables for secure data management.
-- **Microservices**: Modularize the application into microservices to improve maintainability and scalability.
+## 🚀 Usage
 
-## Technologies Used
-- **Frontend**: React
-- **Backend**: Node.js with Express
-- **Database**: PostgreSQL
-- **External API**: REST Countries API
-- **CI/CD**: To be implemented with [CI/CD tools, e.g., GitHub Actions, Jenkins, or Azure DevOps]
-- **Infrastructure as Code**: To be implemented with tools like Terraform or Helm
+### 1. Clone the repo
 
-## Best Practices
-- **Version Control**: All changes are tracked in Git for collaboration and history management.
-- **Environment Management**: Separate configurations for different environments (development, staging, production) using environment variables.
-- **Security**: Sensitive information is managed using environment variables and Kubernetes Secrets.
-- **Documentation**: The project is well-documented to facilitate onboarding and maintenance.
+```bash
+git clone https://github.com/your-username/Dream-Vacation-App.git
+cd Dream-Vacation-App
+```
+
+### 2. Create a `.env` file at the root:
+
+```env
+DB_NAME=yourdatabasename
+DB_USER=yourusername
+DB_PASSWORD=yourpassword
+DB_PORT=5432
+
+BACKEND_PORT=3001
+NODE_ENV=production
+
+FRONTEND_PORT=3000
+
+COUNTRIES_API_BASE_URL=https://restcountries.com/v3.1
+
+DATABASE_URL=postgresql://postgres:<password>@db:5432/<dbname>
+```
+
+### 3. Start the application
+
+```bash
+docker-compose up --build
+```
+
+* Frontend: [http://localhost:3000](http://localhost:3000)
+* Backend: [http://localhost:3001](http://localhost:3001)
+* PostgreSQL: localhost:5432
+
+---
+
+## 📤 Pushed Docker Images
+
+* **Frontend**: `docker.io/your-username/dream-vacation-frontend`
+* **Backend**: `docker.io/your-username/dream-vacation-backend`
+
+---
+
+## ✅ Features
+
+* Multi-stage Docker builds for optimized frontend
+* Distinct services for clear separation of responsibilities
+* Environment setup using .env file at the root
+* Suitable for local and production Docker deployments
+* Persistent PostgreSQL data with Docker volumes
+
+
+## 📤 My Docker Hub Pushed Images In My Repositories
+
+### Backend Repository
+![Backend Docker Hub](Assets/backend.png)
+*Caption: Dream Vacation Backend repository on Docker Hub*
+
+### Frontend Repository
+![Frontend Docker Hub](Assets/frontend.png)
+*Caption: Dream Vacation Frontend repository on Docker Hub*
+
+### All Repositories Overview
+![Repositories Overview](Assets/backend-frontend%20hub.png)
+*Caption: Overview of all my repositories under my Docker Hub.*
+
+### Running Application
+![Running App](Assets/app-view.png)
+*Caption: Dream Vacation Destinations app running locally, showing Canada and Nigeria details.*
+
+---
