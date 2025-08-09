@@ -1,6 +1,10 @@
 # Use official Node.js runtime
 FROM node:18-alpine
 
+# Add metadata
+LABEL maintainer="dejosemario" \
+      description="Frontend for Dream Vacation App"
+
 # Set working directory
 WORKDIR /app
 
