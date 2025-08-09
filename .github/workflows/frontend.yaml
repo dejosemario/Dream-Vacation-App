@@ -15,7 +15,7 @@ env:
   IMAGE_NAME: dejosemario1/dream-vacation-frontend
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
