@@ -1,4 +1,4 @@
-name: FRontend CI/CD
+name: Frontend CI/CD
 on:
   push:
     branches: [ github-actions]
