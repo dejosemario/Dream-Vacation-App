@@ -4,12 +4,12 @@ on:
     branches: [ github-actions]
     paths:
       - 'frontend/**'
-      - '.github/workflows/frontend.yml'
+      - '.github/workflows/frontend.yaml'
   pull_request:
     branches: [ github-actions ]
     paths:
       - 'frontend/**'
-      - '.github/workflows/frontend.yml'
+      - '.github/workflows/frontend.yaml'
   workflow_dispatch: # Allow manual triggering
 
 env:
