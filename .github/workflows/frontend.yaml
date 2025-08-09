@@ -4,10 +4,12 @@ on:
     branches: [ github-actions]
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend.yml'
   pull_request:
     branches: [ github-actions ]
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend.yml'
   workflow_dispatch: # Allow manual triggering
 
 env:
@@ -17,6 +19,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - name: Checkout code
