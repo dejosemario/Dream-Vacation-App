@@ -95,8 +95,17 @@ jobs:
             fi
 
             # Create .env file with specific SHA tags
+            if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
             echo "BACKEND_IMAGE=${{ env.BACKEND_IMAGE }}:${{ github.sha }}" > .env
+            else
+            echo "BACKEND_IMAGE=${{ env.BACKEND_IMAGE }}:latest" > .env
+            fi
+
+            if [ "${{ needs.changes.outputs.frontend }}" = "true" ]; then
             echo "FRONTEND_IMAGE=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}" >> .env
+            else
+            echo "FRONTEND_IMAGE=${{ env.FRONTEND_IMAGE }}:latest" >> .env
+            fi
 
             # Database Configuration
             echo "DB_NAME=dreamvacations" >> .env
@@ -114,9 +123,14 @@ jobs:
             # Login to Docker Hub
             echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-            # Pull specific SHA images (not latest)
+            # Only pull images that were actually built - REPLACE THIS SECTION
+            if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
             docker pull ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            fi
+  
+            if [ "${{ needs.changes.outputs.frontend }}" = "true" ]; then
             docker pull ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            fi
 
             # Stop existing containers
             docker-compose down || true
