@@ -181,13 +181,13 @@ jobs:
             
             # Show container logs for debugging
             echo "=== Database Logs ==="
-            docker logs dream-vacation-app_db_1 --tail 10 || docker logs $(docker ps -q --filter "ancestor=postgres")
+            docker logs dream_vacation_db --tail 10 || docker logs $(docker ps -q --filter "ancestor=postgres")
             
             echo "=== Backend Logs ==="
-            docker logs dream-vacation-app_backend_1 --tail 10 || docker logs $(docker ps -q --filter "name=backend")
+            docker logs dvb-container --tail 10 || docker logs $(docker ps -q --filter "name=backend")
             
             echo "=== Frontend Logs ==="
-            docker logs dream-vacation-app_frontend_1 --tail 10 || docker logs $(docker ps -q --filter "name=frontend")
+            docker logs dvf-container --tail 10 || docker logs $(docker ps -q --filter "name=frontend")
             
             echo "=== Deployment Health Check Complete ==="
 
