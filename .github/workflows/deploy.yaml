@@ -118,7 +118,7 @@ jobs:
             echo "FRONTEND_PORT=3000" >> .env
             echo "NODE_ENV=production" >> .env
             echo "COUNTRIES_API_BASE_URL=https://restcountries.com/v3.1" >> .env
-            echo "REACT_APP_API_URL=http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3001/api" >> .env
+            echo "REACT_APP_API_URL=http://${{ secrets.EC2_HOST }}:3001/api" >> .env
 
             # Login to Docker Hub
             echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
