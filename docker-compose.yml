@@ -29,6 +29,7 @@
         - DATABASE_URL=${DATABASE_URL}
         - PORT=${BACKEND_PORT}
         - NODE_ENV=${NODE_ENV}
+        - FRONTEND_URL=${FRONTEND_URL}
         - COUNTRIES_API_BASE_URL=${COUNTRIES_API_BASE_URL}
       ports:
         - "${BACKEND_PORT}:${BACKEND_PORT}"
