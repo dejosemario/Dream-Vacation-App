@@ -5,7 +5,10 @@
     db: 
       image: postgres:15-alpine
       container_name: dream_vacation_db
-      env_file: .env
+      environment:
+        POSTGRES_DB: ${DB_NAME}
+        POSTGRES_USER: ${DB_USER}
+        POSTGRES_PASSWORD: ${DB_PASSWORD}
       ports:
         - "${DB_PORT}:5432"
       volumes:
@@ -20,7 +23,7 @@
 
     # Backend service
     backend:
-      image: dejosemario1/dream-vacation-frontend:latest 
+      image: dejosemario1/dream-vacation-backend:latest 
       container_name: dvb-container
       env_file: .env
       ports:
