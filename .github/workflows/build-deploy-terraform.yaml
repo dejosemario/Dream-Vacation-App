@@ -9,7 +9,6 @@ env:
   REGISTRY: docker.io
   BACKEND_IMAGE: dejosemario1/dream-vacation-backend
   FRONTEND_IMAGE: dejosemario1/dream-vacation-frontend
-  TF_VERSION: "1.9.8"
 
 jobs:
   changes:
@@ -102,7 +101,6 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
       
       - name: Configure AWS Credentials
@@ -163,7 +161,6 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
       
       - name: Configure AWS Credentials
@@ -423,7 +420,6 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
       
       - name: Configure AWS Credentials
