@@ -111,7 +111,7 @@ resource "aws_security_group" "dream_sg" {
 
 # IAM Role for CloudWatch Agent
 resource "aws_iam_role" "cloudwatch_agent_role" {
-  name = "CloudWatchAgentServerRol-DreamVactionApp"
+  name = "CloudWatchAgentServerRole-DreamvactionApp"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -127,7 +127,7 @@ resource "aws_iam_role" "cloudwatch_agent_role" {
   })
 
   tags = {
-    Name = "CloudWatchAgentServerRole-DreamVactionApp"
+    Name = "CloudWatchAgentServerRole-DreamvactionApp"
   }
 }
 
@@ -139,7 +139,7 @@ resource "aws_iam_role_policy_attachment" "cloudwatch_agent_policy" {
 
 # IAM Instance Profile
 resource "aws_iam_instance_profile" "cloudwatch_agent_profile" {
-  name = "CloudWatchAgentServerProfile"
+  name = "CloudWatchAgentServerProfile-DreamvactionApp"
   role = aws_iam_role.cloudwatch_agent_role.name
 }
 
