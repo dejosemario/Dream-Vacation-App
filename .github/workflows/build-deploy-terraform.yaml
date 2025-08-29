@@ -131,9 +131,22 @@ jobs:
         id: plan
         working-directory: ./terraform
         run: |
+          set +e  # Don't exit on non-zero exit codes
           terraform plan -detailed-exitcode -no-color -out=tfplan
-          echo "tfplan=true" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          PLAN_EXIT_CODE=$?
+          
+          if [ $PLAN_EXIT_CODE -eq 0 ]; then
+            echo "No changes needed"
+            echo "tfplan=false" >> $GITHUB_OUTPUT
+            exit 0
+          elif [ $PLAN_EXIT_CODE -eq 2 ]; then
+            echo "Plan successful - changes detected"
+            echo "tfplan=true" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "Plan failed with exit code $PLAN_EXIT_CODE"
+            exit $PLAN_EXIT_CODE
+          fi
       
       - name: Upload Terraform Plan
         uses: actions/upload-artifact@v4
@@ -435,6 +448,19 @@ jobs:
           terraform init
           echo "Deployment failed. Cleaning up resources..."
           terraform destroy -auto-approve
+        continue-on-error: true
+      
+      - name: Cleanup Manual Resources
+        run: |
+          echo "Cleaning up any remaining conflicting resources..."
+          # Delete CloudWatch alarms
+          aws cloudwatch delete-alarms --alarm-names dream-app-high-cpu || true
+          
+          # Delete IAM instance profile and role (if they exist)
+          aws iam remove-role-from-instance-profile --instance-profile-name CloudWatchAgentServerProfile --role-name CloudWatchAgentServerRole || true
+          aws iam delete-instance-profile --instance-profile-name CloudWatchAgentServerProfile || true
+          aws iam detach-role-policy --role-name CloudWatchAgentServerRole --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy || true
+          aws iam delete-role --role-name CloudWatchAgentServerRole || true
         continue-on-error: true
 
               
