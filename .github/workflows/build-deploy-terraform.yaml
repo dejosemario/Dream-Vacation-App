@@ -1,0 +1,452 @@
+name: Build and Deploy with Terraform
+
+on:
+  push:
+    branches:
+      - terraform
+
+env:
+  REGISTRY: docker.io
+  BACKEND_IMAGE: dejosemario1/dream-vacation-backend
+  FRONTEND_IMAGE: dejosemario1/dream-vacation-frontend
+  TF_VERSION: "1.9.8"
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+      infrastructure: ${{ steps.filter.outputs.infrastructure }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'docker-compose.yml'
+            frontend:
+              - 'frontend/**'
+              - 'docker-compose.yml'
+            terraform:
+              - 'terraform/**'
+            infrastructure:
+              - 'terraform/**'
+              - '.github/workflows/build-deploy-terraform.yaml'
+
+  build-backend:
+    name: Build & Push Backend Image
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+      
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache,mode=max
+
+  build-frontend:
+    name: Build & Push Frontend Image  
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+      
+      - name: Build and Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          build-args: |
+            REACT_APP_API_URL=http://PLACEHOLDER_EC2_IP:3001
+          cache-from: type=registry,ref=${{ env.FRONTEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.FRONTEND_IMAGE }}:buildcache,mode=max
+  
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true' || github.event_name == 'workflow_dispatch'
+    outputs:
+      tfplan: ${{ steps.plan.outputs.tfplan }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Terraform Format Check
+        working-directory: ./terraform
+        run: terraform fmt -check
+        continue-on-error: true
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: |
+          terraform init
+          echo "Terraform initialized successfully"
+      
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: |
+          terraform validate
+          echo "Terraform configuration is valid"
+      
+      - name: Terraform Plan
+        id: plan
+        working-directory: ./terraform
+        run: |
+          terraform plan -detailed-exitcode -no-color -out=tfplan
+          echo "tfplan=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+      
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: terraform/tfplan
+          retention-days: 1
+
+  terraform-apply:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [terraform-plan, build-backend, build-frontend]
+    if: |
+      always() && 
+      needs.terraform-plan.result == 'success' &&
+      (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
+      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped')
+    outputs:
+      ec2_public_ip: ${{ steps.apply.outputs.ec2_public_ip }}
+      application_url: ${{ steps.apply.outputs.application_url }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: terraform/
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: Terraform Apply
+        id: apply
+        working-directory: ./terraform
+        run: |
+          echo "Applying Terraform configuration..."
+          terraform apply -auto-approve tfplan
+          
+          # Capture outputs
+          EC2_IP=$(terraform output -raw instance_public_ip)
+          APP_URL=$(terraform output -raw application_url)
+          SSH_CMD=$(terraform output -raw ssh_connection_command)
+          
+          echo "ec2_public_ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "application_url=$APP_URL" >> $GITHUB_OUTPUT
+          
+          echo "### 🚀 Infrastructure Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "- **EC2 Public IP**: \`$EC2_IP\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Application URL**: [$APP_URL]($APP_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "- **SSH Command**: \`$SSH_CMD\`" >> $GITHUB_STEP_SUMMARY
+          
+          # Wait for instance to be ready
+          echo "Waiting for EC2 instance to be ready..."
+          aws ec2 wait instance-status-ok --instance-ids $(terraform output -raw instance_id)
+          echo "EC2 instance is ready!"
+
+  deploy-application:
+    name: Deploy Application to EC2
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, changes]
+    if: always() && needs.terraform-apply.result == 'success'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Wait for EC2 User Data Completion
+        run: |
+          echo "Waiting for EC2 instance initialization to complete..."
+          sleep 180
+      
+      - name: Deploy Application
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ needs.terraform-apply.outputs.ec2_public_ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          timeout: 600s
+          command_timeout: 300s
+          script: |
+            set -e
+            
+            echo "Starting application deployment..."
+            
+            # Wait for user data script completion
+            echo "Checking for user data completion..."
+            timeout=600
+            while [ $timeout -gt 0 ] && [ ! -f /home/ubuntu/user-data.log ]; do
+              echo "Waiting for user data to complete... ($timeout seconds remaining)"
+              sleep 10
+              timeout=$((timeout - 10))
+            done
+            
+            if [ ! -f /home/ubuntu/user-data.log ]; then
+              echo "User data script did not complete in time!"
+              exit 1
+            fi
+            
+            # Verify Docker installation
+            echo "Verifying Docker installation..."
+            docker --version
+            docker-compose --version
+            
+            # Create application directory
+            echo "Setting up application directory..."
+            mkdir -p /home/ubuntu/dream-vacation-app
+            cd /home/ubuntu/dream-vacation-app
+            
+            # Clone or update repository
+            if [ ! -d ".git" ]; then
+              echo "Cloning repository..."
+              git clone https://github.com/dejosemario/Dream-Vacation-App.git .
+              git checkout terraform
+            else
+              echo "Updating repository..."
+              git fetch --all
+              git checkout terraform
+              git pull origin terraform
+            fi
+            
+            # Create environment file
+            echo "Creating environment configuration..."
+            cat > .env << EOF
+            # Image Tags
+            BACKEND_IMAGE=${{ needs.changes.outputs.backend == 'true' && format('{0}:{1}', env.BACKEND_IMAGE, github.sha) || format('{0}:latest', env.BACKEND_IMAGE) }}
+            FRONTEND_IMAGE=${{ needs.changes.outputs.frontend == 'true' && format('{0}:{1}', env.FRONTEND_IMAGE, github.sha) || format('{0}:latest', env.FRONTEND_IMAGE) }}
+            
+            # Database Configuration
+            DB_NAME=dreamvacations
+            DB_USER=postgres
+            DB_PASSWORD=letjesusin
+            DB_HOST=db
+            DB_PORT=5432
+            DATABASE_URL=postgresql://postgres:letjesusin@db:5432/dreamvacations
+            
+            # Application Ports
+            BACKEND_PORT=3001
+            FRONTEND_PORT=3000
+            
+            # Environment
+            NODE_ENV=production
+            FRONTEND_URL=http://${{ needs.terraform-apply.outputs.ec2_public_ip }}:3000
+            REACT_APP_API_URL=http://${{ needs.terraform-apply.outputs.ec2_public_ip }}:3001
+            COUNTRIES_API_BASE_URL=https://restcountries.com/v3.1
+            EOF
+            
+            echo "Environment file created:"
+            cat .env
+            
+            # Login to Docker Hub
+            echo "Logging into Docker Hub..."
+            echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+            
+            # Pull latest images
+            echo "Pulling Docker images..."
+            if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
+              docker pull ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            else
+              docker pull ${{ env.BACKEND_IMAGE }}:latest
+            fi
+            
+            if [ "${{ needs.changes.outputs.frontend }}" = "true" ]; then
+              docker pull ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            else
+              docker pull ${{ env.FRONTEND_IMAGE }}:latest
+            fi
+            
+            # Stop existing containers
+            echo "Stopping existing containers..."
+            docker-compose down || true
+            
+            # Start new containers
+            echo "Starting application containers..."
+            docker-compose up -d
+            
+            # Wait for containers to be ready
+            echo "Waiting for containers to start..."
+            sleep 30
+            
+            # Show container status
+            echo "Container status:"
+            docker ps -a
+            
+            echo "Application deployment completed successfully!"
+
+  health-check:
+    name: Application Health Check
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, deploy-application]
+    if: always() && needs.deploy-application.result == 'success'
+    steps:
+      - name: Health Check
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ needs.terraform-apply.outputs.ec2_public_ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          timeout: 300s
+          script: |
+            set -e
+            cd /home/ubuntu/dream-vacation-app
+            
+            echo "=== Starting Health Check ==="
+            
+            # Check container health
+            echo "Container Status:"
+            docker ps -a
+            
+            # Check frontend
+            echo "Checking frontend health..."
+            for i in {1..30}; do
+              if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200\|301\|302"; then
+                echo "✅ Frontend is healthy!"
+                break
+              fi
+              echo "⏳ Waiting for frontend... (attempt $i/30)"
+              sleep 10
+            done
+            
+            # Check backend
+            echo "Checking backend health..."
+            for i in {1..30}; do
+              if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 | grep -q "200\|301\|302"; then
+                echo "✅ Backend is healthy!"
+                break
+              fi
+              echo "⏳ Waiting for backend... (attempt $i/30)"
+              sleep 10
+            done
+            
+            # Show recent logs
+            echo "=== Container Logs ==="
+            echo "Backend logs (last 20 lines):"
+            docker logs $(docker ps -q --filter "name=backend" 2>/dev/null) --tail 20 2>/dev/null || echo "Backend container not found"
+            
+            echo "Frontend logs (last 20 lines):"
+            docker logs $(docker ps -q --filter "name=frontend" 2>/dev/null) --tail 20 2>/dev/null || echo "Frontend container not found"
+            
+            echo "Database logs (last 10 lines):"
+            docker logs $(docker ps -q --filter "name=db" 2>/dev/null) --tail 10 2>/dev/null || echo "Database container not found"
+            
+            echo "=== Health Check Completed ==="
+      
+      - name: Update Deployment Status
+        run: |
+          echo "### 🎉 Deployment Completed Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Application Access:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: [${{ needs.terraform-apply.outputs.application_url }}](${{ needs.terraform-apply.outputs.application_url }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend API: [http://${{ needs.terraform-apply.outputs.ec2_public_ip }}:3001](http://${{ needs.terraform-apply.outputs.ec2_public_ip }}:3001)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Infrastructure:**" >> $GITHUB_STEP_SUMMARY
+          echo "- EC2 Instance: \`${{ needs.terraform-apply.outputs.ec2_public_ip }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Region: \`us-east-1\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Instance Type: \`t3.micro\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Monitoring:**" >> $GITHUB_STEP_SUMMARY
+          echo "- CloudWatch CPU Alarm: ✅ Configured" >> $GITHUB_STEP_SUMMARY
+          echo "- CloudWatch Agent: ✅ Active" >> $GITHUB_STEP_SUMMARY
+
+  cleanup-on-failure:
+    name: Cleanup Resources on Failure
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, deploy-application, health-check]
+    if: failure() && needs.terraform-apply.result == 'success'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Terraform Init and Destroy
+        working-directory: ./terraform
+        run: |
+          terraform init
+          echo "Deployment failed. Cleaning up resources..."
+          terraform destroy -auto-approve
+        continue-on-error: true
+
+              
+

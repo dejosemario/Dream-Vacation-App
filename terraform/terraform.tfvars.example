@@ -1,0 +1,11 @@
+# AWS Region
+aws_region = "us-east-1"
+
+# EC2 Instance Configuration
+instance_type = "t3.micro"
+key_name      = "YOUR_KEYPAIR_NAME"        # Replace with your keypair name
+
+# Network Configuration
+vpc_cidr          = "10.0.0.0/16"          # Replace if needed
+subnet_cidr       = "10.0.1.0/24"          # Replace if needed
+availability_zone = "us-east-1a"           # Replace with your preferred AZ

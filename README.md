@@ -276,7 +276,7 @@ This project demonstrates the deployment of the **Dream Vacation App** on AWS EC
 **⚙️ Configuration**:
 - **Name**: `dream-vacation-server`
 - **AMI**: `Ubuntu Server 22.04 LTS`
-- **Instance Type**: `t2.micro`
+- **Instance Type**: `t3.micro`
 - **Key Pair**: Create new or select existing
 - **Network Settings**:
   - **VPC**: `dream-vpc`
