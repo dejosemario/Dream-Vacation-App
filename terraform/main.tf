@@ -96,6 +96,22 @@ resource "aws_security_group" "dream_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Frontend (port 3000)
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+}
+
+# Backend (port 3001)
+  ingress {
+    from_port   = 3001
+    to_port     = 3001
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+}
+
   # All outbound traffic
   egress {
     from_port   = 0
