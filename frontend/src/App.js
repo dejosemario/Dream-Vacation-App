@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL;
+const getApiUrl = () => {
+  const hostname = window.location.hostname;
+  const protocol = window.location.protocol;
+  
+  // For development
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3001';
+  }
+  
+  // For production - use current hostname with port 3001
+  return `${protocol}//${hostname}:3001`;
+};
+
+export const API_URL = getApiUrl();
 
 function App() {
   const [destinations, setDestinations] = useState([]);
