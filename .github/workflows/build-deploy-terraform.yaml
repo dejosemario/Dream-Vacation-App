@@ -459,10 +459,10 @@ jobs:
           aws cloudwatch delete-alarms --alarm-names dream-app-high-cpu || true
           
           # Delete IAM instance profile and role (if they exist)
-          aws iam remove-role-from-instance-profile --instance-profile-name CloudWatchAgentServerProfile --role-name CloudWatchAgentServerRole || true
-          aws iam delete-instance-profile --instance-profile-name CloudWatchAgentServerProfile || true
-          aws iam detach-role-policy --role-name CloudWatchAgentServerRole --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy || true
-          aws iam delete-role --role-name CloudWatchAgentServerRole || true
+          aws iam remove-role-from-instance-profile --instance-profile-name CloudWatchAgentServerProfile-DreamvactionApp --role-name CloudWatchAgentServerRole || true
+          aws iam delete-instance-profile --instance-profile-name CloudWatchAgentServerProfile-DreamvactionApp || true
+          aws iam detach-role-policy --role-name CloudWatchAgentServerProfile-DreamvactionApp --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy || true
+          aws iam delete-role --role-name CloudWatchAgentServerProfile-DreamvactionApp || true
         continue-on-error: true
 
               
