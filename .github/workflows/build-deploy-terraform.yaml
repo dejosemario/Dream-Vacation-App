@@ -433,7 +433,6 @@ jobs:
         needs.deploy-application.result == 'failure' ||
         needs.health-check.result == 'failure'
       )
-    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -450,84 +449,70 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       
-      - name: Download Terraform Plan (if available)
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-plan
-          path: terraform/
-        continue-on-error: true
-
       - name: Terraform Init and Destroy
         working-directory: ./terraform
         run: |
           terraform init
           echo "Deployment failed. Cleaning up resources..."
           terraform destroy -auto-approve
-        continue-on-error: true     
+        continue-on-error: true
       
-      - name: Force Cleanup All Resources
+      - name: Cleanup Manual Resources
         run: |
-          echo "Performing comprehensive cleanup..."
+          echo "Cleaning up any remaining conflicting resources..."
           
-          # Get the VPC ID if it exists (from tag)
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=dream-vpc" --query 'Vpcs[0].VpcId' --output text 2>/dev/null)
+          # Delete CloudWatch alarms
+          echo "Deleting CloudWatch alarms..."
+          aws cloudwatch delete-alarms --alarm-names dream-app-high-cpu || true
+          
+          # Delete IAM resources with CORRECT names
+          echo "Cleaning up IAM resources..."
+          aws iam remove-role-from-instance-profile \
+            --instance-profile-name CloudWatchAgentServerProfile-DreamvactionApp \
+            --role-name CloudWatchAgentServerRole-DreamvactionApp || true
+          
+          aws iam delete-instance-profile \
+            --instance-profile-name CloudWatchAgentServerProfile-DreamvactionApp || true
+          
+          aws iam detach-role-policy \
+            --role-name CloudWatchAgentServerRole-DreamvactionApp \
+            --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy || true
+          
+          aws iam delete-role \
+            --role-name CloudWatchAgentServerRole-DreamvactionApp || true
+          
+          # Clean up any VPC with dream-vpc tag that might be left
+          echo "Checking for leftover VPC resources..."
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=dream-vpc" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")
           
           if [ "$VPC_ID" != "None" ] && [ "$VPC_ID" != "" ]; then
-            echo "Found VPC: $VPC_ID, cleaning up all resources..."
+            echo "Found leftover VPC: $VPC_ID, cleaning up..."
             
-            # Terminate instances in the VPC
-            INSTANCES=$(aws ec2 describe-instances --filters "Name=vpc-id,Values=$VPC_ID" "Name=instance-state-name,Values=running,pending,stopping,stopped" --query 'Reservations[*].Instances[*].InstanceId' --output text)
-            if [ ! -z "$INSTANCES" ]; then
-              echo "Terminating instances: $INSTANCES"
-              aws ec2 terminate-instances --instance-ids $INSTANCES || true
-              aws ec2 wait instance-terminated --instance-ids $INSTANCES || true
-            fi
-            
-            # Delete security groups (except default)
-            SECURITY_GROUPS=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text)
-            for sg in $SECURITY_GROUPS; do
-              aws ec2 delete-security-group --group-id $sg || true
-            done
-            
-            # Delete subnets
+            # Clean up the VPC and its resources
             SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text)
             for subnet in $SUBNETS; do
               aws ec2 delete-subnet --subnet-id $subnet || true
             done
             
-            # Delete internet gateways
             IGWS=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[*].InternetGatewayId' --output text)
             for igw in $IGWS; do
               aws ec2 detach-internet-gateway --internet-gateway-id $igw --vpc-id $VPC_ID || true
               aws ec2 delete-internet-gateway --internet-gateway-id $igw || true
             done
             
-            # Delete VPC
             aws ec2 delete-vpc --vpc-id $VPC_ID || true
-            echo "VPC cleanup completed"
           fi
           
-          # Clean up CloudWatch resources
-          echo "Cleaning up CloudWatch resources..."
-          aws cloudwatch delete-alarms --alarm-names dream-app-high-cpu || true
-          
-          # Clean up IAM resources (CORRECTED NAMES)
-          echo "Cleaning up IAM resources..."
-          aws iam remove-role-from-instance-profile --instance-profile-name CloudWatchAgentServerProfile-DreamvactionApp --role-name CloudWatchAgentServerRole-DreamvactionApp || true
-          aws iam delete-instance-profile --instance-profile-name CloudWatchAgentServerProfile-DreamvactionApp || true
-          aws iam detach-role-policy --role-name CloudWatchAgentServerRole-DreamvactionApp --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy || true
-          aws iam delete-role --role-name CloudWatchAgentServerRole-DreamvactionApp || true
-          
-          echo "Comprehensive cleanup completed"
+          echo "Manual cleanup completed"
         continue-on-error: true
       
       - name: Verify Cleanup
         run: |
-          echo "Verifying cleanup..."
-          echo "Remaining VPCs with dream-vpc tag:"
-          aws ec2 describe-vpcs --filters "Name=tag:Name,Values=dream-vpc" --query 'Vpcs[*].[VpcId,State]' --output table || true
-          echo "Remaining CloudWatch IAM roles:"
+          echo "Verifying cleanup completed..."
+          echo "Checking for remaining IAM roles:"
           aws iam list-roles --query 'Roles[?contains(RoleName, `CloudWatchAgentServerRole-DreamvactionApp`)].[RoleName]' --output table || true
+          echo "Checking for remaining VPCs:"
+          aws ec2 describe-vpcs --filters "Name=tag:Name,Values=dream-vpc" --query 'Vpcs[*].[VpcId,State]' --output table || true
         continue-on-error: true
 
               
