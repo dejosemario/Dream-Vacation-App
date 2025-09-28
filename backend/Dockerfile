@@ -3,7 +3,7 @@ FROM node:18-alpine
 
 # Add metadata
 LABEL maintainer="dejosemario" \
-      description="Frontend for Dream Vacation App"
+      description="Backend for Dream Vacation App"
 
 # Set working directory
 WORKDIR /app
