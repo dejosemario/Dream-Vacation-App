@@ -158,12 +158,8 @@ jobs:
   terraform-apply:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
-    needs: [terraform-plan, build-backend, build-frontend]
-    if: |
-      always() && 
-      needs.terraform-plan.result == 'success' &&
-      (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
-      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped')
+    needs: [terraform-plan]
+    if: needs.terraform-plan.result == 'success'      
     outputs:
       ec2_public_ip: ${{ steps.apply.outputs.ec2_public_ip }}
       application_url: ${{ steps.apply.outputs.application_url }}
@@ -221,38 +217,69 @@ jobs:
   deploy-application:
     name: Deploy Application to EC2
     runs-on: ubuntu-latest
-    needs: [terraform-apply, changes]
-    if: always() && needs.terraform-apply.result == 'success'
+    needs: [terraform-apply, changes, build-backend, build-frontend]
+    if: | 
+      always() && 
+      (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped') &&
+      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
       
-      - name: Wait for EC2 User Data Completion
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Get EC2 IP from Terraform State
+        id: tf-outputs
+        working-directory: ./terraform
         run: |
-          echo "Waiting for EC2 instance initialization to complete..."
+          terraform init
+          EC2_IP=$(terraform output -raw instance_public_ip)
+          echo "ec2_ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "✅ EC2 Instance: $EC2_IP"
+
+      - name: Wait for New Infrastructure
+        if: needs.terraform-apply.result == 'success'
+        run: |
+          echo "New infrastructure detected - waiting for initialization..."
           sleep 180
+      
+      - name: Skip Wait for Existing Infrastructure
+        if: needs.terraform-apply.result == 'skipped'
+        run: |
+          echo "Using existing infrastructure - skipping initialization wait ⚡"
       
       - name: Deploy Application
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ needs.terraform-apply.outputs.ec2_public_ip }}
+          host: ${{ steps.tf-outputs.outputs.ec2_ip }}
           username: ubuntu
           key: ${{ secrets.EC2_PRIVATE_KEY }}
-          timeout: 600s
-          command_timeout: 300s
+          timeout: 300s
+          command_timeout: 180s
           script: |
             set -e
             
-            echo "Starting application deployment..."
+            echo "🚀 Starting application deployment..."
             
-            # Wait for user data script completion
-            echo "Checking for user data completion..."
-            timeout=1200
-            while [ $timeout -gt 0 ] && [ ! -f /home/ubuntu/user-data.log ]; do
-              echo "Waiting for user data to complete... ($timeout seconds remaining)"
-              sleep 10
-              timeout=$((timeout - 10))
-            done
+            # Only check for user-data on NEW infrastructure
+            if [ "${{ needs.terraform-apply.result }}" = "success" ]; then
+              echo "Verifying new infrastructure setup..."
+              timeout=300
+              while [ $timeout -gt 0 ] && [ ! -f /home/ubuntu/user-data.log ]; do
+                echo "Waiting for infrastructure setup... ($timeout seconds remaining)"
+                sleep 10
+                timeout=$((timeout - 10))
+              done
             
             if [ ! -f /home/ubuntu/user-data.log ]; then
               echo "User data script did not complete in time!"
@@ -354,10 +381,37 @@ jobs:
     needs: [terraform-apply, deploy-application]
     if: always() && needs.deploy-application.result == 'success'
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+    
+      - name: Get EC2 IP from Terraform State
+        id: tf-outputs
+        working-directory: ./terraform
+        run: |
+          terraform init
+          EC2_IP=$(terraform output -raw instance_public_ip)
+          APP_URL=$(terraform output -raw application_url)
+          
+          echo "ec2_ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
+          echo "✅ Health check target: $EC2_IP"    
+    
       - name: Health Check
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ needs.terraform-apply.outputs.ec2_public_ip }}
+          host: ${{ steps.tf-outputs.outputs.ec2_ip }}
           username: ubuntu
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           timeout: 300s
@@ -373,23 +427,23 @@ jobs:
             
             # Check frontend
             echo "Checking frontend health..."
-            for i in {1..30}; do
+            for i in {1..15}; do
               if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200\|301\|302"; then
                 echo "✅ Frontend is healthy!"
                 break
               fi
-              echo "⏳ Waiting for frontend... (attempt $i/30)"
+              echo "⏳ Waiting for frontend... (attempt $i/15)"
               sleep 10
             done
             
             # Check backend
             echo "Checking backend health..."
-            for i in {1..30}; do
+            for i in {1..15}; do
               if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 | grep -q "200\|301\|302"; then
                 echo "✅ Backend is healthy!"
                 break
               fi
-              echo "⏳ Waiting for backend... (attempt $i/30)"
+              echo "⏳ Waiting for backend... (attempt $i/15)"
               sleep 10
             done
             
@@ -411,13 +465,20 @@ jobs:
           echo "### 🎉 Deployment Completed Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Application Access:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Frontend: [${{ needs.terraform-apply.outputs.application_url }}](${{ needs.terraform-apply.outputs.application_url }})" >> $GITHUB_STEP_SUMMARY
-          echo "- Backend API: [http://${{ needs.terraform-apply.outputs.ec2_public_ip }}:3001](http://${{ needs.terraform-apply.outputs.ec2_public_ip }}:3001)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: [${{ steps.tf-outputs.outputs.app_url }}](${{ steps.tf-outputs.outputs.app_url }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend API: [http://${{ steps.tf-outputs.outputs.ec2_ip }}:3001](http://${{ steps.tf-outputs.outputs.ec2_ip }}:3001)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY         
           echo "**Infrastructure:**" >> $GITHUB_STEP_SUMMARY
-          echo "- EC2 Instance: \`${{ needs.terraform-apply.outputs.ec2_public_ip }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- EC2 Instance: \`${{ steps.tf-outputs.outputs.ec2_ip }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Region: \`us-east-1\`" >> $GITHUB_STEP_SUMMARY
           echo "- Instance Type: \`t3.micro\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Type:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Infrastructure Change: ${{ needs.terraform-apply.result == 'success' && '✅ Yes' || '⚡ No (Code-only deployment)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Services Updated:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: ${{ needs.build-backend.result == 'success' && '✅ Updated' || 'No changes' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: ${{ needs.build-frontend.result == 'success' && '✅ Updated' || 'No changes' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Monitoring:**" >> $GITHUB_STEP_SUMMARY
           echo "- CloudWatch CPU Alarm: ✅ Configured" >> $GITHUB_STEP_SUMMARY
@@ -426,13 +487,8 @@ jobs:
   cleanup-on-failure:
     name: Cleanup Resources on Failure
     runs-on: ubuntu-latest
-    needs: [terraform-apply, deploy-application, health-check]
-    if: |
-      always() && (
-        needs.terraform-apply.result == 'failure' ||
-        needs.deploy-application.result == 'failure' ||
-        needs.health-check.result == 'failure'
-      )
+    needs: [terraform-apply]
+    if: always() && needs.terraform-apply.result == 'failure'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -508,11 +564,18 @@ jobs:
       
       - name: Verify Cleanup
         run: |
-          echo "Verifying cleanup completed..."
-          echo "Checking for remaining IAM roles:"
-          aws iam list-roles --query 'Roles[?contains(RoleName, `CloudWatchAgentServerRole-DreamvactionApp`)].[RoleName]' --output table || true
-          echo "Checking for remaining VPCs:"
-          aws ec2 describe-vpcs --filters "Name=tag:Name,Values=dream-vpc" --query 'Vpcs[*].[VpcId,State]' --output table || true
+          echo "Verifying cleanup..."
+          
+          echo "Remaining IAM roles:"
+          aws iam list-roles \
+            --query 'Roles[?contains(RoleName, `CloudWatchAgentServerRole-DreamvactionApp`)].[RoleName]' \
+            --output table 2>/dev/null || echo "None found"
+          
+          echo "Remaining VPCs:"
+          aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=dream-vpc" \
+            --query 'Vpcs[*].[VpcId,State]' \
+            --output table 2>/dev/null || echo "None found"
         continue-on-error: true
 
               
